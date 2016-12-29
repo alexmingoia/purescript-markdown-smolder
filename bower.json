@@ -11,6 +11,10 @@
     "purescript",
     "smolder"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/alexmingoia/purescript-markdown-smolder.git"
+  },
   "moduleType": [],
   "ignore": ["node_modules", "bower_components"],
   "homepage": "",
