@@ -1,0 +1,21 @@
+{
+  "name": "purescript-markdown-smolder",
+  "description": "Render purescript-markdown to purescript-smolder.",
+  "main": "index.js",
+  "authors": [
+    "Alexander C. Mingoia"
+  ],
+  "license": "Apache-2.0",
+  "keywords": [
+    "markdown",
+    "purescript",
+    "smolder"
+  ],
+  "moduleType": [],
+  "ignore": ["node_modules", "bower_components"],
+  "homepage": "",
+  "dependencies": {
+    "purescript-markdown": "^8.0.1",
+    "purescript-smolder": "^6.0.0"
+  }
+}
