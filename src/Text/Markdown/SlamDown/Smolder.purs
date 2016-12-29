@@ -6,10 +6,10 @@ import Control.Monad.State (State, runState)
 import Control.Monad.State.Class (get, put)
 import Data.CatList (CatList, empty)
 import Data.Eq ((==))
-import Data.Foldable (foldl, for_)
+import Data.Foldable (foldl, intercalate)
 import Data.Function (($))
 import Data.Functor (map)
-import Data.List (List)
+import Data.List (List, head, tail)
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Monoid (mempty)
 import Data.Semigroup ((<>))
@@ -17,8 +17,9 @@ import Data.Show (show)
 import Data.StrMap (StrMap, empty, insert, lookup) as SM
 import Data.Tuple (fst, snd)
 import Data.Unit (unit)
+import Prelude ((||))
 import Text.Markdown.SlamDown (Block(..), Inline(..), LinkTarget(..), ListType(..), SlamDownP(..))
-import Text.Smolder.HTML (a, blockquote, code, div, em, hr, img, ol, p, pre, strong, ul)
+import Text.Smolder.HTML (a, blockquote, code, em, hr, img, li, ol, p, pre, strong, ul)
 import Text.Smolder.HTML.Attributes (alt, href, src)
 import Text.Smolder.Markup (Attr(..), Markup, MarkupM(..), text, (!))
 
@@ -37,9 +38,10 @@ replaceLinkRefs refs (Element n c a e r) =
     let
       ref = getLinkRef a
     in
-      Element n c a e r ! href (fromMaybe ref (SM.lookup ref refs))
+      Element n c a e (replaceLinkRefs refs r) ! href (fromMaybe ref (SM.lookup ref refs))
     else
-      Element n (map (replaceLinkRefs refs) c) a e r
+      Element n (map (replaceLinkRefs refs) c) a e (replaceLinkRefs refs r)
+replaceLinkRefs refs (Content s r) = Content s (replaceLinkRefs refs r)
 replaceLinkRefs refs markup = markup
 
 getLinkRef :: CatList Attr -> String
@@ -49,12 +51,54 @@ getLinkRef attrs = foldl foldAttr "" attrs
       if (key == "href") then val else ""
 
 toElements :: forall a e. List (Block a) -> MarkupState e
-toElements bs = foldl f (pure (div mempty)) bs
+toElements bs = foldl f (pure mempty) bs
   where
     f m bl = do
       markup <- m
       block <- toElement bl
       pure $ bind markup (\_ -> block)
+
+toListElements :: forall a e. List (Block a) -> MarkupState e
+toListElements bs = do
+  let foldBlocks = foldl f (pure mempty)
+      f m bl = do
+        markup <- m
+        block <- toElement bl
+        pure $ bind markup $ \_ -> block
+
+  -- if the head element is a paragraph block, and the list only contains a single
+  -- paragraph block or a single paragraph block and another list block,
+  -- unpack the paragraph block.
+  case (head bs) of
+    Nothing -> foldBlocks bs
+    Just bl -> do
+      el <- toElement bl
+      case (isParagraph el) of
+        false -> foldBlocks bs
+        true -> case (tail bs) of
+          Nothing -> foldBlocks bs
+          Just tbs -> case (getChild el) of
+            Nothing -> foldBlocks bs
+            Just child -> do
+              markup <- foldBlocks tbs
+              pure $ bind child $ \_ -> markup
+
+
+isEmpty :: forall e. Markup e -> Boolean
+isEmpty (Return _) = true
+isEmpty _ = false
+
+isList :: forall e. Markup e -> Boolean
+isList (Element n _ _ _ _) = (n == "ul" || n == "ol")
+isList _ = false
+
+isParagraph :: forall e. Markup e -> Boolean
+isParagraph (Element n _ _ _ _) = n == "p"
+isParagraph _ = false
+
+getChild :: forall e. Markup e -> Maybe (Markup e)
+getChild (Element n c a e r) = c
+getChild _ = Nothing
 
 toElement :: forall a e. Block a -> MarkupState e
 toElement block =
@@ -71,18 +115,18 @@ toElement block =
     (Lst (Bullet s) bss) -> do
       let f m bs = do
             markup <- m
-            bl <- toElements bs
-            pure $ bind markup (\_ -> bl)
+            bl <- toListElements bs
+            pure $ bind markup (\_ -> li bl)
       children <- foldl f (pure mempty) bss
       pure $ ul children
     (Lst (Ordered s) bss) -> do
       let f m bs = do
             markup <- m
-            bl <- toElements bs
-            pure $ bind markup (\_ -> bl)
+            bl <- toListElements bs
+            pure $ bind markup (\_ -> li bl)
       children <- foldl f (pure mempty) bss
       pure $ ol children
-    (CodeBlock ct ss) -> pure $ pre $ code $ for_ ss text
+    (CodeBlock ct ss) -> pure $ pre $ code $ text $ intercalate "\n" ss
     (LinkReference l url) -> do
       refs <- get
       put (SM.insert l url refs)
@@ -90,7 +134,7 @@ toElement block =
     (Rule) -> pure hr
 
 toInlineElements :: forall a e. List (Inline a) -> MarkupState e
-toInlineElements is = foldl f (pure (div mempty)) is
+toInlineElements is = foldl f (pure mempty) is
   where
     f m il = do
       markup <- m
