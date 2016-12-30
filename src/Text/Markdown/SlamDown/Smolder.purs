@@ -16,7 +16,7 @@ import Data.Monoid (mempty)
 import Data.Semigroup ((<>))
 import Data.Show (show)
 import Data.StrMap (StrMap, empty, insert, lookup) as SM
-import Data.String (toLower)
+import Data.String (Pattern(Pattern), Replacement(Replacement), replaceAll)
 import Data.String.Regex (regex, replace)
 import Data.String.Regex.Flags (global)
 import Data.Tuple (fst, snd)
@@ -112,12 +112,13 @@ toElement block =
       pure $ p children
     (Header n is) -> do
       children <- toInlineElements is
-      let regx = regex "\\W" global
-      case regx of
+      case (regex "[^\\w -]" global) of
         Left _ ->
           pure $ Element ("h" <> show n) (Just children) (empty) empty (Return unit)
-        Right rx -> do
-          let id = toLower $ replace rx "" $ textFromElement "" children
+        Right pattern -> do
+          let id = replaceSpaces $ stripInvalidChars $ textFromElement "" children
+              replaceSpaces = replaceAll (Pattern " ") (Replacement "_")
+              stripInvalidChars = replace pattern ""
               textFromElement txt (Element _ c _ _ r) =
                 maybe "" (textFromElement txt) c <> txt <> textFromElement txt r
               textFromElement txt (Content s r) = txt <> s <> textFromElement txt r
