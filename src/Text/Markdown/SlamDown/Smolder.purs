@@ -4,17 +4,21 @@ import Control.Applicative (pure)
 import Control.Bind (bind)
 import Control.Monad.State (State, runState)
 import Control.Monad.State.Class (get, put)
-import Data.CatList (CatList, empty)
+import Data.CatList (CatList, cons, empty)
+import Data.Either (Either(..))
 import Data.Eq ((==))
 import Data.Foldable (foldl, intercalate)
 import Data.Function (($))
 import Data.Functor (map)
 import Data.List (List, head, tail)
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Monoid (mempty)
 import Data.Semigroup ((<>))
 import Data.Show (show)
 import Data.StrMap (StrMap, empty, insert, lookup) as SM
+import Data.String (toLower)
+import Data.String.Regex (regex, replace)
+import Data.String.Regex.Flags (global)
 import Data.Tuple (fst, snd)
 import Data.Unit (unit)
 import Prelude ((||))
@@ -108,7 +112,17 @@ toElement block =
       pure $ p children
     (Header n is) -> do
       children <- toInlineElements is
-      pure $ Element ("h" <> show n) (Just children) empty empty (Return unit)
+      let regx = regex "\\W" global
+      case regx of
+        Left _ ->
+          pure $ Element ("h" <> show n) (Just children) (empty) empty (Return unit)
+        Right rx -> do
+          let id = toLower $ replace rx "" $ textFromElement "" children
+              textFromElement txt (Element _ c _ _ r) =
+                maybe "" (textFromElement txt) c <> txt <> textFromElement txt r
+              textFromElement txt (Content s r) = txt <> s <> textFromElement txt r
+              textFromElement txt (Return _) = txt
+          pure $ Element ("h" <> show n) (Just children) (cons (Attr "id" id) empty) empty (Return unit)
     (Blockquote bs) -> do
       children <- toElements bs
       pure $ blockquote children

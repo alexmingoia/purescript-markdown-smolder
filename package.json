@@ -1,7 +1,6 @@
 {
   "name": "purescript-markdown-smolder",
   "private": true,
-  "version": "1.0.0",
   "description": "Render purescript-markdown to purescript-smolder.",
   "main": "index.js",
   "scripts": {
