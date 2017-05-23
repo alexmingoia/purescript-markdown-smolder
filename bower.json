@@ -16,10 +16,16 @@
     "url": "git://github.com/alexmingoia/purescript-markdown-smolder.git"
   },
   "moduleType": [],
-  "ignore": ["node_modules", "bower_components"],
+  "ignore": [
+    "node_modules",
+    "bower_components"
+  ],
   "homepage": "",
   "dependencies": {
     "purescript-markdown": "^8.0.1",
     "purescript-smolder": "^6.0.0"
+  },
+  "devDependencies": {
+    "purescript-test-unit": "^10.1.0"
   }
 }
