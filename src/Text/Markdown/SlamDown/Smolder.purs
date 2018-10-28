@@ -4,15 +4,16 @@ import Prelude
 
 import Control.Monad.Reader (Reader, runReader, ask)
 import Data.Either (Either(..))
-import Data.Foldable (foldMap, foldl, intercalate, sequence_)
-import Data.List (List, filter)
+import Data.Foldable (foldMap, foldl, intercalate, sequence_, traverse_)
+import Data.List (List, filter, range, length, zip)
 import Data.Map as Map
 import Data.Maybe (fromMaybe, maybe)
 import Data.String (Pattern(Pattern), Replacement(Replacement), replaceAll)
 import Data.String.Regex (regex, replace)
 import Data.String.Regex.Flags (global)
 import Data.Traversable (traverse)
-import Text.Markdown.SlamDown (Block(..), Inline(..), LinkTarget(..), ListType(..), SlamDownP(..))
+import Data.Tuple (Tuple(..))
+import Text.Markdown.SlamDown (Block(..), CodeBlockType(..), Inline(..), LinkTarget(..), ListType(..), SlamDownP(..))
 import Text.Smolder.HTML as HTML
 import Text.Smolder.HTML.Attributes as HA
 import Text.Smolder.Markup (Markup, MarkupM(..), text, (!))
@@ -67,13 +68,21 @@ getChild _ = SM.empty
 encodeInlines :: forall a. List (Inline a) -> String 
 encodeInlines inlines = 
   case (regex "[^\\w -]" global) of
-    Left _ -> encoded
-    Right pattern -> stripInvalidChars pattern encoded
+    Left _ -> encoded identity
+    Right pattern -> encoded (stripInvalidChars pattern)
   where
     replaceSpaces = replaceAll (Pattern " ") (Replacement "_")
-    encoded = (replaceSpaces <<< intercalate "_" <<< filter (_ /= "\n") <<< map toInline) inlines
+    encoded stripFn= (replaceSpaces <<< intercalate "" 
+        <<< filter (_ /= "\n") <<< map (stripFn <<< toInline)) inlines
     stripInvalidChars pattern = replace pattern ""
     
+toCodeBlockContent :: forall e. List String -> Markup e
+toCodeBlockContent ss = flip traverse_ (zip (range 1 (length ss)) ss) \(Tuple n s) -> 
+  if n == 1 
+    then text s 
+    else do 
+      HTML.br
+      text s 
 
 toElement :: forall a e. Block a -> ReaderMarkup e
 toElement block =
@@ -83,14 +92,15 @@ toElement block =
     (Header n is) -> toInlineElements is 
       >>= (\children -> pure $ HTML.parent ("h" <> show n) children ! HA.id (encodeInlines is))
     (Blockquote bs) -> (pure <<< HTML.blockquote) =<< toElements bs
-    (Lst (Bullet s) bss) -> sequence_ <$> traverse (\e -> (pure <<< HTML.ul) =<< toListElements e) bss
-    (Lst (Ordered s) bss) -> sequence_ <$> traverse (\e -> (pure <<< HTML.ol) =<< toListElements e) bss
-    (CodeBlock ct ss) -> pure $ HTML.pre $ HTML.code $ text $ intercalate "\n" ss
-    -- (LinkReference l url) -> pure $ HTML.a ! HA.href url $ text l
-    -- (LinkReference l url) -> do
-    --   refs <- get
-    --   put (Map.insert l url refs)
-    --   pure mempty
+    (Lst (Bullet s) bss) -> 
+      sequence_ <$> traverse (\e -> (pure <<< HTML.ul) =<< toListElements e) bss
+    (Lst (Ordered s) bss) -> 
+      sequence_ <$> traverse (\e -> (pure <<< HTML.ol) =<< toListElements e) bss
+    (CodeBlock Indented ss) -> 
+      pure <<< HTML.pre <<< HTML.code $ toCodeBlockContent ss
+    (CodeBlock (Fenced _ info) ss) -> 
+      pure $ HTML.pre $ HTML.code ! HA.className info $ toCodeBlockContent ss
+      
     (Rule) -> pure $ HTML.hr
     _ -> pure $ SM.empty
 
@@ -104,7 +114,7 @@ toInlineElement il =
     (Entity s) -> pure $ text s
     (Space) -> pure $ text " "
     (SoftBreak) -> pure $ text "\n"
-    (LineBreak) -> pure $ text "\n"
+    (LineBreak) -> pure HTML.br
 
     (Emph is) -> (pure <<< HTML.em) =<< toInlineElements is
     (Strong is) -> (pure <<< HTML.strong) =<< toInlineElements is

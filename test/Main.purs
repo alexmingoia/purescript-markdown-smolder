@@ -4,7 +4,7 @@ import Text.Smolder.Renderer.String
 
 import Data.Either (Either, either)
 import Effect (Effect)
-import Prelude (Unit, discard, identity, (>>>))
+import Prelude (Unit, discard, identity, (>>>), ($))
 import Test.Unit (suite, test)
 import Test.Unit.Assert as Assert
 import Test.Unit.Main (runTest)
@@ -35,6 +35,9 @@ main = runTest do
       Assert.equal
         "<h1 id=\"Hello\">Hello</h1>"
         (compileMd "# Hello")
+      Assert.equal 
+        "<h2 id=\"Share_AWS_API_Gateway_Resources\">Share AWS API Gateway Resources</h2>"
+        (compileMd "## Share AWS API Gateway Resources")
 
     test "lists" do
       Assert.equal
@@ -53,3 +56,20 @@ main = runTest do
       Assert.equal
         "<p>PureScript is <em>great</em>!</p>"
         (compileMd "PureScript is *great*!")
+
+    test "paragraph" do 
+      Assert.equal 
+        "<p>Line 1</p><p>Line 2</p>"
+        (compileMd $ "Line 1\n\nLine 2")
+      Assert.equal
+        "<p>Paragraph with a<br/>line break</p>"
+        (compileMd "Paragraph with a  \n\
+          \line break")
+
+    test "codeblocks" do 
+      Assert.equal
+        "<pre><code class=\"python\"># python code<br/>    line 2</code></pre>"
+        (compileMd $ "~~~~python \n\
+        \# python code\n\
+        \    line 2\n\
+        \~~~~")
