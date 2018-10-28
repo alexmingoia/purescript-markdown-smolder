@@ -20,12 +20,13 @@
     "node_modules",
     "bower_components"
   ],
-  "homepage": "",
+  "homepage": "https://github.com/alexmingoia/purescript-markdown-smolder",
   "dependencies": {
-    "purescript-markdown": "^8.0.1",
-    "purescript-smolder": "^6.0.0"
+    "purescript-markdown": "^12.0.0",
+    "purescript-smolder": "^11.0.1",
+    "purescript-ordered-collections": "^1.4.0"
   },
   "devDependencies": {
-    "purescript-test-unit": "^10.1.0"
+    "purescript-test-unit": "^14.0.0"
   }
 }

@@ -1,162 +1,103 @@
 module Text.Markdown.SlamDown.Smolder (toMarkup) where
 
-import Control.Applicative (pure)
-import Control.Bind (bind)
-import Control.Monad.State (State, runState)
-import Control.Monad.State.Class (get, put)
-import Data.CatList (CatList, cons, empty)
+import Prelude
+
+import Control.Monad.Reader (Reader, runReader, ask)
 import Data.Either (Either(..))
-import Data.Eq ((==))
-import Data.Foldable (foldl, intercalate)
-import Data.Function (($))
-import Data.Functor (map)
-import Data.List (List, head, tail)
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
-import Data.Monoid (mempty)
-import Data.Semigroup ((<>))
-import Data.Show (show)
-import Data.StrMap (StrMap, empty, insert, lookup) as SM
+import Data.Foldable (foldMap, foldl, intercalate, sequence_)
+import Data.List (List, filter)
+import Data.Map as Map
+import Data.Maybe (fromMaybe, maybe)
 import Data.String (Pattern(Pattern), Replacement(Replacement), replaceAll)
 import Data.String.Regex (regex, replace)
 import Data.String.Regex.Flags (global)
-import Data.Tuple (fst, snd)
-import Data.Unit (unit)
-import Prelude ((||))
+import Data.Traversable (traverse)
 import Text.Markdown.SlamDown (Block(..), Inline(..), LinkTarget(..), ListType(..), SlamDownP(..))
-import Text.Smolder.HTML (a, blockquote, code, em, hr, img, li, ol, p, pre, strong, ul)
-import Text.Smolder.HTML.Attributes (alt, href, src)
-import Text.Smolder.Markup (Attr(..), Markup, MarkupM(..), text, (!))
+import Text.Smolder.HTML as HTML
+import Text.Smolder.HTML.Attributes as HA
+import Text.Smolder.Markup (Markup, MarkupM(..), text, (!))
+import Text.Smolder.Markup as SM
 
-type ReferenceLinks = SM.StrMap String
-
-type MarkupState e = State ReferenceLinks (Markup e)
+type ReferenceLinks = Map.Map String String
+type ReaderMarkup e = Reader ReferenceLinks (Markup e)
 
 toMarkup :: forall a e. SlamDownP a -> Markup e
-toMarkup (SlamDown bs) = replaceLinkRefs (snd markupState) (fst markupState)
+toMarkup (SlamDown bs) = runReader (toElements bs) linkRefs
+  where 
+    linkRefs = foldMap getBlockLinkRefs bs
+
+getBlockLinkRefs :: forall a. Block a -> ReferenceLinks
+getBlockLinkRefs = getBlockLinkRefs' Map.empty
   where
-    markupState = runState (toElements bs) SM.empty
+    getBlockLinkRefs' links block = 
+      case block of 
+        (LinkReference k url) -> Map.insert k url links
+        (Blockquote bs) -> foldl getBlockLinkRefs' links bs
+        (Lst _ bss) -> links <> foldMap (foldl getBlockLinkRefs' Map.empty) bss
+        _ -> links
 
-replaceLinkRefs :: forall e. ReferenceLinks -> Markup e -> Markup e
-replaceLinkRefs refs (Element n c a e r) =
-  if n == "a" then
-    let
-      ref = getLinkRef a
-    in
-      Element n c a e (replaceLinkRefs refs r) ! href (fromMaybe ref (SM.lookup ref refs))
-    else
-      Element n (map (replaceLinkRefs refs) c) a e (replaceLinkRefs refs r)
-replaceLinkRefs refs (Content s r) = Content s (replaceLinkRefs refs r)
-replaceLinkRefs refs markup = markup
+toElements :: forall a e. List (Block a) -> ReaderMarkup e
+toElements bs = sequence_ <$> traverse toElement bs
 
-getLinkRef :: CatList Attr -> String
-getLinkRef attrs = foldl foldAttr "" attrs
-  where
-    foldAttr url (Attr key val) =
-      if (key == "href") then val else ""
+toListElement :: forall a e. Block a -> ReaderMarkup e
+toListElement block =
+  case block of
+    (Paragraph is) -> (pure <<< HTML.li) =<< toInlineElements is
+    _ -> toElement block
 
-toElements :: forall a e. List (Block a) -> MarkupState e
-toElements bs = foldl f (pure mempty) bs
-  where
-    f m bl = do
-      markup <- m
-      block <- toElement bl
-      pure $ bind markup (\_ -> block)
+toListElements :: forall a e. List (Block a) -> ReaderMarkup e
+toListElements bs = sequence_ <$> traverse toListElement bs
 
-toListElements :: forall a e. List (Block a) -> MarkupState e
-toListElements bs = do
-  let foldBlocks = foldl f (pure mempty)
-      f m bl = do
-        markup <- m
-        block <- toElement bl
-        pure $ bind markup $ \_ -> block
-
-  -- if the head element is a paragraph block, and the list only contains a single
-  -- paragraph block or a single paragraph block and another list block,
-  -- unpack the paragraph block.
-  case (head bs) of
-    Nothing -> foldBlocks bs
-    Just bl -> do
-      el <- toElement bl
-      case (isParagraph el) of
-        false -> foldBlocks bs
-        true -> case (tail bs) of
-          Nothing -> foldBlocks bs
-          Just tbs -> case (getChild el) of
-            Nothing -> foldBlocks bs
-            Just child -> do
-              markup <- foldBlocks tbs
-              pure $ bind child $ \_ -> markup
-
-
-isEmpty :: forall e. Markup e -> Boolean
-isEmpty (Return _) = true
+isEmpty :: forall e a. MarkupM e a -> Boolean
+isEmpty (Empty _) = true
 isEmpty _ = false
 
-isList :: forall e. Markup e -> Boolean
-isList (Element n _ _ _ _) = (n == "ul" || n == "ol")
+isList :: forall e a. MarkupM e a -> Boolean
+isList (Element _ n _ _ _ _) = (n == "ul" || n == "ol")
 isList _ = false
 
-isParagraph :: forall e. Markup e -> Boolean
-isParagraph (Element n _ _ _ _) = n == "p"
+isParagraph :: forall e a. MarkupM e a -> Boolean
+isParagraph (Element _ n _ _ _ _) = n == "p"
 isParagraph _ = false
 
-getChild :: forall e. Markup e -> Maybe (Markup e)
-getChild (Element n c a e r) = c
-getChild _ = Nothing
+getChild :: forall e a. MarkupM e a -> Markup e
+getChild (Element _ n c a e r) = c
+getChild _ = SM.empty
 
-toElement :: forall a e. Block a -> MarkupState e
+encodeInlines :: forall a. List (Inline a) -> String 
+encodeInlines inlines = 
+  case (regex "[^\\w -]" global) of
+    Left _ -> encoded
+    Right pattern -> stripInvalidChars pattern encoded
+  where
+    replaceSpaces = replaceAll (Pattern " ") (Replacement "_")
+    encoded = (replaceSpaces <<< intercalate "_" <<< filter (_ /= "\n") <<< map toInline) inlines
+    stripInvalidChars pattern = replace pattern ""
+    
+
+toElement :: forall a e. Block a -> ReaderMarkup e
 toElement block =
   case block of
-    (Paragraph is) -> do
-      children <- toInlineElements is
-      pure $ p children
-    (Header n is) -> do
-      children <- toInlineElements is
-      case (regex "[^\\w -]" global) of
-        Left _ ->
-          pure $ Element ("h" <> show n) (Just children) (empty) empty (Return unit)
-        Right pattern -> do
-          let id = replaceSpaces $ stripInvalidChars $ textFromElement "" children
-              replaceSpaces = replaceAll (Pattern " ") (Replacement "_")
-              stripInvalidChars = replace pattern ""
-              textFromElement txt (Element _ c _ _ r) =
-                maybe "" (textFromElement txt) c <> txt <> textFromElement txt r
-              textFromElement txt (Content s r) = txt <> s <> textFromElement txt r
-              textFromElement txt (Return _) = txt
-          pure $ Element ("h" <> show n) (Just children) (cons (Attr "id" id) empty) empty (Return unit)
-    (Blockquote bs) -> do
-      children <- toElements bs
-      pure $ blockquote children
-    (Lst (Bullet s) bss) -> do
-      let f m bs = do
-            markup <- m
-            bl <- toListElements bs
-            pure $ bind markup (\_ -> li bl)
-      children <- foldl f (pure mempty) bss
-      pure $ ul children
-    (Lst (Ordered s) bss) -> do
-      let f m bs = do
-            markup <- m
-            bl <- toListElements bs
-            pure $ bind markup (\_ -> li bl)
-      children <- foldl f (pure mempty) bss
-      pure $ ol children
-    (CodeBlock ct ss) -> pure $ pre $ code $ text $ intercalate "\n" ss
-    (LinkReference l url) -> do
-      refs <- get
-      put (SM.insert l url refs)
-      pure mempty
-    (Rule) -> pure hr
+    (Paragraph is) -> (pure <<< HTML.p) =<< toInlineElements is
 
-toInlineElements :: forall a e. List (Inline a) -> MarkupState e
-toInlineElements is = foldl f (pure mempty) is
-  where
-    f m il = do
-      markup <- m
-      inline <- toInlineElement il
-      pure $ bind markup (\_ -> inline)
+    (Header n is) -> toInlineElements is 
+      >>= (\children -> pure $ HTML.parent ("h" <> show n) children ! HA.id (encodeInlines is))
+    (Blockquote bs) -> (pure <<< HTML.blockquote) =<< toElements bs
+    (Lst (Bullet s) bss) -> sequence_ <$> traverse (\e -> (pure <<< HTML.ul) =<< toListElements e) bss
+    (Lst (Ordered s) bss) -> sequence_ <$> traverse (\e -> (pure <<< HTML.ol) =<< toListElements e) bss
+    (CodeBlock ct ss) -> pure $ HTML.pre $ HTML.code $ text $ intercalate "\n" ss
+    -- (LinkReference l url) -> pure $ HTML.a ! HA.href url $ text l
+    -- (LinkReference l url) -> do
+    --   refs <- get
+    --   put (Map.insert l url refs)
+    --   pure mempty
+    (Rule) -> pure $ HTML.hr
+    _ -> pure $ SM.empty
 
-toInlineElement :: forall a e. Inline a -> MarkupState e
+toInlineElements :: forall a e. List (Inline a) -> ReaderMarkup e
+toInlineElements is = sequence_ <$> traverse toInlineElement is
+
+toInlineElement :: forall a e. Inline a -> ReaderMarkup e
 toInlineElement il =
   case il of
     (Str s) -> pure $ text s
@@ -164,21 +105,22 @@ toInlineElement il =
     (Space) -> pure $ text " "
     (SoftBreak) -> pure $ text "\n"
     (LineBreak) -> pure $ text "\n"
-    (Emph is) -> do
-      children <- toInlineElements is
-      pure $ em children
-    (Strong is) -> do
-      children <- toInlineElements is
-      pure $ strong children
-    (Code e s) -> pure $ code $ text s
-    (Link is (InlineLink url)) -> do
-      children <- toInlineElements is
-      pure $ a ! href url $ children
-    (Link is (ReferenceLink ref)) -> do
-      children <- toInlineElements is
-      pure $ a ! href (fromMaybe "" ref) $ children
-    (Image is url) -> pure $ img ! src url ! alt (toInlines is)
-    (FormField l r e) -> pure mempty
+
+    (Emph is) -> (pure <<< HTML.em) =<< toInlineElements is
+    (Strong is) -> (pure <<< HTML.strong) =<< toInlineElements is
+    (Code e s) -> pure $ HTML.code $ text s
+    (Link is (InlineLink url)) -> 
+      toInlineElements is >>= 
+        (pure <<< (HTML.a ! HA.href url))
+    (Link is (ReferenceLink ref)) -> toInlineElements is >>= \el -> do  
+      links <- ask
+      let 
+        url = maybe "" (\k -> fromMaybe "" $ Map.lookup k links) ref
+        urlAttr = HA.href url
+      pure $ HTML.a ! urlAttr $ el
+      
+    (Image is url) -> pure $ HTML.img ! HA.src url ! HA.alt (toInlines is)
+    (FormField l r e) -> pure $ SM.empty
 
 toInlines :: forall a. List (Inline a) -> String
 toInlines is = foldl (\str il -> str <> toInline il) "" is

@@ -1,35 +1,35 @@
 module Test.Main where
 
-import Control.Monad.Aff.AVar (AVAR)
-import Control.Monad.Aff.Console (CONSOLE)
-import Control.Monad.Eff (Eff)
+import Text.Smolder.Renderer.String
+
 import Data.Either (Either, either)
-import Prelude (Unit, bind, discard, id, (>>>))
+import Effect (Effect)
+import Prelude (Unit, discard, identity, (>>>))
 import Test.Unit (suite, test)
 import Test.Unit.Assert as Assert
-import Test.Unit.Console (TESTOUTPUT)
 import Test.Unit.Main (runTest)
 import Text.Markdown.SlamDown.Parser (parseMd)
 import Text.Markdown.SlamDown.Smolder (toMarkup)
 import Text.Markdown.SlamDown.Syntax (SlamDownP)
-import Text.Smolder.Renderer.String
 
-type TestEffects fx =
-  (console :: CONSOLE , testOutput :: TESTOUTPUT , avar :: AVAR | fx)
 
 compileMd :: String -> String
 compileMd input =
-  either id (toMarkup >>> render)
+  either identity (toMarkup >>> render)
   (parseMd input :: Either String (SlamDownP String))
 
-main :: forall fx. Eff (TestEffects fx) Unit
+main :: Effect Unit
 main = runTest do
   suite "markdown" do
 
     test "links" do
       Assert.equal
-        "<p><a href=\"http:&#x2F;&#x2F;www.purescript.org&#x2F;\">PureScript</a></p>"
+        "<p><a href=\"http://www.purescript.org/\">PureScript</a></p>"
         (compileMd "[PureScript](http://www.purescript.org/)")
+
+      Assert.equal 
+        "<p><a href=\"http://slashdot.org\">You can use numbers for reference-style link definitions</a></p>"
+        (compileMd "[You can use numbers for reference-style link definitions][1]\n [1]: http://slashdot.org")
 
     test "headings" do
       Assert.equal
