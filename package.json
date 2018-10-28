@@ -23,10 +23,10 @@
   },
   "homepage": "https://github.com/alexmingoia/purescript-markdown-smolder#readme",
   "devDependencies": {
-    "purescript": "^0.10.3"
+    "purescript": "^0.12.0"
   },
   "dependencies": {
-    "bower": "^1.8.0",
-    "pulp": "^10.0.0"
+    "bower": "^1.8.4",
+    "pulp": "^12.3.0"
   }
 }
