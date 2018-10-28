@@ -5,7 +5,8 @@ import Prelude
 import Control.Monad.Reader (Reader, runReader, ask)
 import Data.Either (Either(..))
 import Data.Foldable (foldMap, foldl, intercalate, sequence_, traverse_)
-import Data.List (List, filter, range, length, zip)
+import Data.List (List, filter, range, length, zip, (:))
+import Data.Map (unions)
 import Data.Map as Map
 import Data.Maybe (fromMaybe, maybe)
 import Data.String (Pattern(Pattern), Replacement(Replacement), replaceAll)
@@ -34,7 +35,7 @@ getBlockLinkRefs = getBlockLinkRefs' Map.empty
       case block of 
         (LinkReference k url) -> Map.insert k url links
         (Blockquote bs) -> foldl getBlockLinkRefs' links bs
-        (Lst _ bss) -> links <> foldMap (foldl getBlockLinkRefs' Map.empty) bss
+        (Lst _ bss) -> unions $ links : map (foldl getBlockLinkRefs' Map.empty) bss
         _ -> links
 
 toElements :: forall a e. List (Block a) -> ReaderMarkup e
@@ -100,7 +101,7 @@ toElement block =
       pure <<< HTML.pre <<< HTML.code $ toCodeBlockContent ss
     (CodeBlock (Fenced _ info) ss) -> 
       pure $ HTML.pre $ HTML.code ! HA.className info $ toCodeBlockContent ss
-      
+
     (Rule) -> pure $ HTML.hr
     _ -> pure $ SM.empty
 
