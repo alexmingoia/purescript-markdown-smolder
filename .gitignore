@@ -4,3 +4,4 @@ build/
 node_modules/
 bower_components/
 .psc-ide-port
+package-lock.json
