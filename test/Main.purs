@@ -68,7 +68,7 @@ main = runTest do
 
     test "codeblocks" do 
       Assert.equal
-        "<pre><code class=\"python\"># python code<br/>    line 2</code></pre>"
+        "<pre class=\"code\" data-lang=\"python\"><code># python code<br/>    line 2</code></pre>"
         (compileMd $ "~~~~python \n\
         \# python code\n\
         \    line 2\n\

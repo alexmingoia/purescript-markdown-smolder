@@ -17,7 +17,7 @@ import Data.Tuple (Tuple(..))
 import Text.Markdown.SlamDown (Block(..), CodeBlockType(..), Inline(..), LinkTarget(..), ListType(..), SlamDownP(..))
 import Text.Smolder.HTML as HTML
 import Text.Smolder.HTML.Attributes as HA
-import Text.Smolder.Markup (Markup, MarkupM(..), text, (!))
+import Text.Smolder.Markup (Markup, MarkupM(..), attribute, text, (!))
 import Text.Smolder.Markup as SM
 
 type ReferenceLinks = Map.Map String String
@@ -100,7 +100,7 @@ toElement block =
     (CodeBlock Indented ss) -> 
       pure <<< HTML.pre <<< HTML.code $ toCodeBlockContent ss
     (CodeBlock (Fenced _ info) ss) -> 
-      pure $ HTML.pre $ HTML.code ! HA.className info $ toCodeBlockContent ss
+      pure $ HTML.pre ! HA.className "code" ! (attribute "data-lang" info) $ HTML.code $ toCodeBlockContent ss
 
     (Rule) -> pure $ HTML.hr
     _ -> pure $ SM.empty
