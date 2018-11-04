@@ -45,8 +45,24 @@ main = runTest do
         (compileMd "* Hello")
 
       Assert.equal
+        "<ul><li>Hello</li><li>World</li></ul>"
+        (compileMd "* Hello\n* World")
+
+      Assert.equal
         "<ol><li>Hello</li></ol>"
         (compileMd "1. Hello")
+
+      Assert.equal
+        "<ol><li>Hello</li><li>World</li></ol>"
+        (compileMd "1. Hello\n2. World")
+
+      Assert.equal
+        "<ol><li>Hello<ul><li>Purescript</li><li>Haskell</li></ul></li><li>World</li></ol>"
+        (compileMd "1. Hello\n    * Purescript\n    * Haskell\n2. World")
+
+      Assert.equal
+        "<ul><li>Hello<ol><li>Purescript</li><li>Haskell</li></ol></li><li>World</li></ul>"
+        (compileMd "* Hello\n    1. Purescript\n    2. Haskell\n* World")
 
     test "styling" do
       Assert.equal

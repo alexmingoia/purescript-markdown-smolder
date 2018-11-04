@@ -44,23 +44,16 @@ toElements bs = sequence_ <$> traverse toElement bs
 toListElement :: forall a e. Block a -> ReaderMarkup e
 toListElement block =
   case block of
-    (Paragraph is) -> (pure <<< HTML.li) =<< toInlineElements is
+    (Paragraph is) -> toInlineElements is
     _ -> toElement block
 
-toListElements :: forall a e. List (Block a) -> ReaderMarkup e
-toListElements bs = sequence_ <$> traverse toListElement bs
-
-isEmpty :: forall e a. MarkupM e a -> Boolean
-isEmpty (Empty _) = true
-isEmpty _ = false
-
-isList :: forall e a. MarkupM e a -> Boolean
-isList (Element _ n _ _ _ _) = (n == "ul" || n == "ol")
-isList _ = false
-
-isParagraph :: forall e a. MarkupM e a -> Boolean
-isParagraph (Element _ n _ _ _ _) = n == "p"
-isParagraph _ = false
+toListElements :: forall a e. ListType -> List (List (Block a)) -> ReaderMarkup e
+toListElements lstType bss = case lstType of 
+  (Bullet _) -> HTML.ul <$> lstItems
+  (Ordered _) -> HTML.ol <$> lstItems
+  where
+    toBlockItems b = sequence_ <$> traverse toListElement b
+    lstItems = sequence_ <$> traverse (\bs -> HTML.li <$> toBlockItems bs) bss
 
 getChild :: forall e a. MarkupM e a -> Markup e
 getChild (Element _ n c a e r) = c
@@ -93,10 +86,7 @@ toElement block =
     (Header n is) -> toInlineElements is 
       >>= (\children -> pure $ HTML.parent ("h" <> show n) children ! HA.id (encodeInlines is))
     (Blockquote bs) -> (pure <<< HTML.blockquote) =<< toElements bs
-    (Lst (Bullet s) bss) -> 
-      sequence_ <$> traverse (\e -> (pure <<< HTML.ul) =<< toListElements e) bss
-    (Lst (Ordered s) bss) -> 
-      sequence_ <$> traverse (\e -> (pure <<< HTML.ol) =<< toListElements e) bss
+    (Lst lstType bss) -> toListElements lstType bss
     (CodeBlock Indented ss) -> 
       pure <<< HTML.pre <<< HTML.code $ toCodeBlockContent ss
     (CodeBlock (Fenced _ info) ss) -> 
